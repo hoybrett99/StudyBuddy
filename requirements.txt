@@ -1,0 +1,53 @@
+# Core Framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Pydantic (Data Validation)
+pydantic
+pydantic-settings
+# ^ pydantic-settings for configuration management
+
+# LLM & AI
+google-generativeai
+# ^ Official Google Gemini SDK
+
+# Vector Database & Embeddings
+chromadb
+sentence-transformers
+# ^ For local embeddings (HuggingFace models)
+
+
+# LangChain (for text splitting and RAG utilities)
+langchain
+langchain-community
+# ^ Community integrations for LangChain
+
+# Document Processing
+pypdf
+# ^ PDF text extraction
+python-docx
+# ^ DOCX text extraction
+
+# Utilities
+python-dotenv
+# ^ Load environment variables from .env file
+aiofiles
+# ^ Async file operations
+
+# Data Processing
+numpy
+pandas
+# ^ Required by sentence-transformers
+
+# HTTP Client (optional, for testing)
+httpx
+# ^ Async HTTP client, useful for testing
+
+# Development Tools (optional but recommended)
+pytest
+pytest-asyncio
+black
+# ^ Code formatter
+ruff
+# ^ Fast Python linter
