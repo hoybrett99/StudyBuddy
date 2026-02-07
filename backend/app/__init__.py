@@ -15,6 +15,8 @@ from .models import (
     SystemStats
 )
 
+from .config import Settings, get_settings
+
 __all__ = [
     "FileType",
     "DocumentMetaData", 
@@ -24,5 +26,7 @@ __all__ = [
     "Source",
     "ErrorResponse",
     "DocumentChunk",
-    "SystemStats"
+    "SystemStats",
+    "Settings",
+    "get_settings",
 ]
