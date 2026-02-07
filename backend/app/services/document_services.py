@@ -7,12 +7,12 @@ from typing import List
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from ..models import (
+from app.models import (
     DocumentMetaData,
     DocumentChunk,
     FileType
 )
-from ..config import get_settings
+from app.config import get_settings
 
 class DocumentService:
     """
@@ -209,7 +209,7 @@ if __name__ == "__main__":
         """ * 10  # Repeat to make it longer for multiple chunks
         
         # Create metadata
-        from backend.app.models import DocumentMetaData, FileType
+        from app.models import DocumentMetaData, FileType
         
         metadata = DocumentMetaData(
             filename="biology_textbook.pdf",
