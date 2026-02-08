@@ -33,6 +33,7 @@ class UploadResponse(BaseModel):
     message: str
     chunks_created: int
     document_id: str
+    filename: str
 
 class QueryRequest(BaseModel):
     """

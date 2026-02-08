@@ -18,8 +18,8 @@ from app.models import (
 )
 from app.config import Settings, get_settings
 from app.services.document_services import DocumentService
-# from app.services.embedding_service import EmbeddingService
-# from app.services.rag_service import RAGService
+from app.services.embedding_services import EmbeddingService
+from app.services.rag_services import RAGService
 
 # FastAPI App
 app = FastAPI(
@@ -43,11 +43,11 @@ app.add_middleware(
 def get_document_service() -> DocumentService:
     return DocumentService()
 
-# def get_embedding_service() -> EmbeddingService:
-#     return EmbeddingService()
+def get_embedding_service() -> EmbeddingService:
+    return EmbeddingService()
 
-# def get_rag_service() -> RAGService:
-#     return RAGService()
+def get_rag_service() -> RAGService:
+    return RAGService()
 
 # Route Handlers
 @app.post(
@@ -58,9 +58,9 @@ def get_document_service() -> DocumentService:
 )
 async def upload_document(
     file: UploadFile = File(...),
-    doc_service: DocumentService = Depends(get_document_service)
-    # emb_service: EmbeddingService = Depends(get_embedding_service)
-    # rag_service: RAGService = Depends(get_rag_service)
+    doc_service: DocumentService = Depends(get_document_service),
+    emb_service: EmbeddingService = Depends(get_embedding_service),
+    rag_service: RAGService = Depends(get_rag_service),
 ):
     """
     Upload and process a document.
@@ -113,6 +113,22 @@ async def upload_document(
         chunks = doc_service.create_chunks(text, document_id, metadata)
 
         # Generate embeddings
+        chunks_with_embeddings = emb_service.embed_texts(chunks)
+
+        # Store in chromaDB
+        await rag_service.store_chunks(chunks_with_embeddings)
+
+        # Updating metadata
+        metadata.total_chunks = len(chunks)
+
+        # return response
+        return UploadResponse(
+            success=True,
+            message="Document processed successfully",
+            filename=file.filename,
+            chunks_created=len(chunks),
+            document_id=document_id,
+        )
     
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -124,3 +140,53 @@ async def upload_document(
             status_code=500,
             detail=f"Error processing document: {str(e)}"
         )
+    
+async def query(
+        request: QueryRequest,
+        rag_service: RAGService= Depends(get_rag_service)
+):
+    """
+    Ask a question about uploaded documents.
+    
+    FastAPI automatically:
+    1. Parses JSON from request body
+    2. Validates it against QueryRequest model
+    3. Gives us a QueryRequest object
+    4. Returns validation errors if invalid
+    """
+    start_time = time.time()
+
+    try:
+        # Get answer from RAG service
+        answer, sources = await rag_service.query(
+            question = request.question,
+            num_contexts = request.num_contexts,
+            document_ids = request.document_ids
+        )
+
+        query_time = time.time() - start_time
+
+        return QueryResponse(
+            answer = answer,
+            sources = sources,
+            query_time_seconds = round(query_time, 2) 
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing query: {str(e)}"
+        )
+    
+@app.get("/health")
+async def health_check():
+    """Simple health check."""
+    return {"status": "healthy"}
+
+@app.get("/stats", response_model=SystemStats)
+async def get_stats(
+    rag_service: RAGService = Depends(get_rag_service)
+):
+    """Get system statistics."""
+    stats = await rag_service.get_stats()
+    return stats
