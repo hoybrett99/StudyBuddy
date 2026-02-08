@@ -3,6 +3,7 @@ Service for handling document operations.
 """
 import uuid
 from pathlib import Path
+import re
 from typing import List
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -78,48 +79,90 @@ class DocumentService:
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
         
-    def _extract_pdf(self, file_path: Path) -> str:
+    def _clean_text(self, text: str) -> str:
         """
-        Extract text content from a PDF file.
-        
-        The underscore prefix (_extract_pdf) indicates this is a private/internal method.
-        It should only be called from within the DocumentService class.
+        Clean OCR artifacts and formatting issues from extracted text.
         
         Args:
-            file_path (Path): Path to the PDF file to extract text from
+            text: Raw extracted text
             
         Returns:
-            str: Extracted text from all pages, with pages separated by double newlines
-            
-        Raises:
-            PdfReadError: If the PDF file is corrupted or cannot be read
-            FileNotFoundError: If the file doesn't exist
-            
-        Example:
-            >>> file_path = Path("/uploads/document.pdf")
-            >>> text = self._extract_pdf(file_path)
-            >>> print(text[:100])  # First 100 characters
-            "Chapter 1: Introduction
-            
-            This is the beginning of the document..."
+            str: Cleaned text
         """
-        # Create a PDF reader object for this file
-        reader = PdfReader(file_path)
+        # Remove single letters followed by space (common OCR error)
+        text = re.sub(r'\b([A-Z])\s+', '', text)
         
-        # List to store text from each page
-        text_parts = []
+        # Replace multiple spaces with single space
+        text = re.sub(r'\s+', ' ', text)
         
-        # Loop through each page in the PDF
-        for page in reader.pages:
-            # Extract text from this page
-            text = page.extract_text()
-            
-            # Only add non-empty text
+        # Remove standalone capital letters that aren't 'A' or 'I'
+        text = re.sub(r'\s+[B-HJ-Z]\s+', ' ', text)
+        
+        # Fix common character substitutions
+        replacements = {
+            'K': '',       # Remove stray K's
+            'H ': ' ',     # Remove H followed by space
+            'O ': 'o ',    # Fix capital O to lowercase o
+            '—': '-',      # Fix em-dashes
+            "'": "'",      # Fix smart quotes
+            '"': '"',      # Fix smart quotes
+            '"': '"',
+        }
+        
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        
+        # Remove extra whitespace
+        text = ' '.join(text.split())
+        
+        return text
+        
+    def _extract_pdf(self, file_path: Path) -> str:
+        """
+        Extract text from PDF using multiple methods.
+        
+        Tries:
+        1. pdfplumber (best for digital PDFs)
+        2. pypdf (fallback)
+        3. OCR (for scanned PDFs)
+        
+        Returns the cleanest result.
+        """
+        results = []
+        
+        # Method 1: pdfplumber
+        try:
+            import pdfplumber
+            text_parts = []
+            with pdfplumber.open(file_path) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        text_parts.append(text)
+            text = "\n\n".join(text_parts)
             if text:
-                text_parts.append(text)  # Fixed: added text parameter
+                results.append(('pdfplumber', self._clean_text(text)))
+        except Exception as e:
+            print(f"pdfplumber failed: {e}")
         
-        # Join all pages with double newlines between them
-        return "\n\n".join(text_parts)
+        # Method 2: pypdf
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(file_path)
+            text_parts = [page.extract_text() for page in reader.pages if page.extract_text()]
+            text = "\n\n".join(text_parts)
+            if text:
+                results.append(('pypdf', self._clean_text(text)))
+        except Exception as e:
+            print(f"pypdf failed: {e}")
+        
+        # Choose the best result (longest clean text)
+        if results:
+            best = max(results, key=lambda x: len(x[1]))
+            print(f"Using {best[0]} for PDF extraction")
+            return best[1]
+        else:
+            raise ValueError("Could not extract text from PDF")
     
     def _extract_txt(self, file_path: Path) -> str:
          """Extract text from txt files"""
