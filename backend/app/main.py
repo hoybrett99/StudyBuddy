@@ -3,6 +3,7 @@ Main FastAPI application.
 """
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import time
 from pathlib import Path
@@ -195,15 +196,107 @@ async def query(
             detail=f"Error processing query: {str(e)}"
         )
     
+@app.post("/preview", response_class=JSONResponse)
+async def preview_document(
+    file: UploadFile = File(...),
+    doc_service: DocumentService = Depends(get_document_service),
+    settings: Settings = Depends(get_settings)
+):
+    """
+    Preview extracted text from a document without processing it.
+    Useful for debugging PDF extraction quality.
+    """
+    try:
+        # Validate file type
+        file_extension = Path(file.filename).suffix[1:].lower()
+
+        if file_extension not in settings.allowed_file_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File type .{file_extension} not supported. Allowed: {settings.allowed_file_types}"
+            )
+        
+        file_type = FileType(file_extension)
+
+        # Read file content
+        content = await file.read()
+        file_size = len(content)
+
+        # Save file temporarily
+        file_path = await doc_service.save_file(file.filename, content)
+
+        print(f"Previewing file: {file.filename} ({file_size} bytes)")
+
+        # Extract text
+        extracted_text = doc_service.extract_text(file_path=file_path, file_type=file_type)
+
+        # Calculate some stats
+        word_count = len(extracted_text.split())
+        line_count = len(extracted_text.split('\n'))
+
+        # Return preview with stats
+        return {
+            "filename": file.filename,
+            "file_type": file_type.value,
+            "file_size_bytes": file_size,
+            "file_size_kb": round(file_size / 1024, 2),
+            "extracted_length": len(extracted_text),
+            "word_count": word_count,
+            "line_count": line_count,
+            "preview_first_500": extracted_text[:500],
+            "preview_last_500": extracted_text[-500:] if len(extracted_text) > 500 else "",
+            "full_text": extracted_text
+        }
+    
+    except Exception as e:
+        import traceback
+        print(f"Error previewing document: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error previewing document: {str(e)}"
+        )
+
+    
 @app.get("/health")
 async def health_check():
     """Simple health check."""
     return {"status": "healthy"}
 
-@app.get("/stats", response_model=SystemStats)
+@app.get("/stats")
 async def get_stats(
     rag_service: RAGService = Depends(get_rag_service)
 ):
     """Get system statistics."""
-    stats = await rag_service.get_stats()
-    return stats
+    try:
+        # Get collection info
+        collection = rag_service.collection
+        
+        # Count total chunks
+        total_chunks = collection.count()
+        
+        # Get unique document IDs
+        if total_chunks > 0:
+            results = collection.get()
+            unique_docs = set()
+            if results and 'metadatas' in results:
+                for metadata in results['metadatas']:
+                    if metadata and 'document_id' in metadata:
+                        unique_docs.add(metadata['document_id'])
+            total_documents = len(unique_docs)
+        else:
+            total_documents = 0
+        
+        return {
+            "total_documents": total_documents,
+            "total_chunks": total_chunks,
+            "total_queries": rag_service.total_queries  # Make sure this is included
+        }
+    
+    except Exception as e:
+        print(f"Error getting stats: {str(e)}")
+        return {
+            "total_documents": 0,
+            "total_chunks": 0,
+            "total_queries": 0
+        }
